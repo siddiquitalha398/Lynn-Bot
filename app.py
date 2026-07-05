@@ -10,6 +10,7 @@ import time
 import random
 import asyncio
 import threading
+import requests
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 from json import load, dump
@@ -485,6 +486,78 @@ class Bot(BaseBot):
             except Exception:
                 await asyncio.sleep(2.0)
 
+    @staticmethod
+    def _make_clothing_item(item_id: str) -> Item:
+        return Item(type="clothing", amount=1, id=item_id, account_bound=False, active_palette=0)
+
+    def _fetch_free_items_by_category(self) -> dict:
+        # Blocking call - always run this via asyncio.to_thread from async code.
+        resp = requests.get("https://webapi.highrise.game/items?rarity=none", timeout=15)
+        resp.raise_for_status()
+        free_items = resp.json()
+        by_category = {}
+        for it in free_items:
+            item_id = it.get("id")
+            if not item_id or "-" not in item_id:
+                continue
+            category = item_id.split("-")[0]
+            by_category.setdefault(category, []).append(item_id)
+        return by_category
+
+    async def randomize_bot_outfit(self) -> bool:
+        try:
+            current = await self.highrise.get_my_outfit()
+            new_outfit = {item.id.split("-")[0]: item for item in current.outfit}
+
+            by_category = await asyncio.to_thread(self._fetch_free_items_by_category)
+
+            # The lower-body/dress slot is exclusive: only one of these combos is valid at a time.
+            body_slot_categories = ["shirt", "pants", "skirt", "dress", "fullsuit"]
+            for c in body_slot_categories:
+                new_outfit.pop(c, None)
+
+            style_options = []
+            if by_category.get("dress"):
+                style_options.append("dress")
+            if by_category.get("fullsuit"):
+                style_options.append("fullsuit")
+            if by_category.get("shirt") and by_category.get("pants"):
+                style_options.append("shirt_pants")
+            if by_category.get("shirt") and by_category.get("skirt"):
+                style_options.append("shirt_skirt")
+
+            if style_options:
+                style = random.choice(style_options)
+                if style == "dress":
+                    new_outfit["dress"] = self._make_clothing_item(random.choice(by_category["dress"]))
+                elif style == "fullsuit":
+                    new_outfit["fullsuit"] = self._make_clothing_item(random.choice(by_category["fullsuit"]))
+                elif style == "shirt_pants":
+                    new_outfit["shirt"] = self._make_clothing_item(random.choice(by_category["shirt"]))
+                    new_outfit["pants"] = self._make_clothing_item(random.choice(by_category["pants"]))
+                elif style == "shirt_skirt":
+                    new_outfit["shirt"] = self._make_clothing_item(random.choice(by_category["shirt"]))
+                    new_outfit["skirt"] = self._make_clothing_item(random.choice(by_category["skirt"]))
+            else:
+                # No free options available for body wear right now - keep whatever was equipped before.
+                for c in body_slot_categories:
+                    item = next((i for i in current.outfit if i.id.split("-")[0] == c), None)
+                    if item:
+                        new_outfit[c] = item
+
+            # These slots don't conflict with anything - swap them independently if options exist.
+            extra_categories = ["hair_front", "hair_back", "shoes", "hat", "jacket", "necklace", "earrings", "glasses"]
+            for category in extra_categories:
+                options = by_category.get(category)
+                if options:
+                    new_outfit[category] = self._make_clothing_item(random.choice(options))
+
+            await self.highrise.set_outfit(outfit=list(new_outfit.values()))
+            return True
+        except Exception as e:
+            print(f"[OUTFIT ERROR] {e}")
+            return False
+
     async def handle_welcome_flow(self, user: User):
         await asyncio.sleep(1.0)
         try:
@@ -539,7 +612,7 @@ class Bot(BaseBot):
         if clean_msg == "!help":
             help_text = "⚡ Commands: !list | !stop | !down"
             if is_owner:
-                help_text += " | !give @username <amount> | !giveall <amount> | !set | !bed | !summon @username | !bal"
+                help_text += " | !give @username <amount> | !giveall <amount> | !set | !bed | !summon @username | !bal | !outfit"
             await self.respond(user, help_text, source)
             return
 
@@ -572,7 +645,16 @@ class Bot(BaseBot):
         if not is_owner:
             return
 
-        if clean_msg == "!bed":
+        if clean_msg == "!outfit":
+            await self.respond(user, "👗 Rolling a new look...", source)
+            success = await self.randomize_bot_outfit()
+            if success:
+                await self.respond(user, "✅ Done! Type !outfit again to reroll if you don't like it.", source)
+            else:
+                await self.respond(user, "❌ Couldn't update the outfit right now, try again in a moment.", source)
+            return
+
+        elif clean_msg == "!bed":
             try:
                 await self.highrise.teleport(user.id, self.bed_position)
             except Exception:
