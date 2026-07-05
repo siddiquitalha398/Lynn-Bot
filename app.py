@@ -20,8 +20,8 @@ from highrise.__main__ import main, BotDefinition
 sys.stdout.reconfigure(line_buffering=True)
 os.environ["PYTHONUNBUFFERED"] = "1"
 
-ROOM_ID = "PASTE_ROOM_ID_HERE"
-API_TOKEN = "PASTE_API_TOKEN_HERE"
+ROOM_ID = "6a04b2a11a183afb5b0a5f14"
+API_TOKEN = "5c1ab60cb91a24976b40ee21030addde7b2af708ad3b424d5ade1870a4f5be04"
 DATA_FILE = "./data.json"
 
 TIP_MAP = {
