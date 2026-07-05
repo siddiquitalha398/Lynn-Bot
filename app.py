@@ -537,9 +537,9 @@ class Bot(BaseBot):
             pass
 
         if clean_msg == "!help":
-            help_text = "⚡ Commands: !list | !stop"
+            help_text = "⚡ Commands: !list | !stop | !down"
             if is_owner:
-                help_text += " | !give @username <amount> | !giveall <amount> | !set | !bed | !summon @username"
+                help_text += " | !give @username <amount> | !giveall <amount> | !set | !bed | !summon @username | !bal"
             await self.respond(user, help_text, source)
             return
 
@@ -561,6 +561,13 @@ class Bot(BaseBot):
             await self.stop_user_emote(user.id)
             return
 
+        elif clean_msg == "!down":
+            try:
+                await self.highrise.teleport(user.id, Position(4.0, 0.0, 1.0, "FrontRight"))
+            except Exception:
+                pass
+            return
+
         # --- EVERYTHING BELOW THIS LINE IS OWNER ONLY ---
         if not is_owner:
             return
@@ -568,6 +575,15 @@ class Bot(BaseBot):
         if clean_msg == "!bed":
             try:
                 await self.highrise.teleport(user.id, self.bed_position)
+            except Exception:
+                pass
+            return
+
+        elif clean_msg == "!bal":
+            try:
+                wallet = await self.highrise.get_wallet()
+                gold = next((currency.amount for currency in wallet.content if currency.type == 'gold'), 0)
+                await self.highrise.send_whisper(user.id, f"💰 Balance: {gold}g")
             except Exception:
                 pass
             return
